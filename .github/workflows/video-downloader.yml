@@ -1,3 +1,4 @@
+
 name: Video Downloader & Splitter
 
 on:
@@ -12,8 +13,8 @@ on:
         required: true
         type: string
       callback_url:
-        description: 'آدرس وب‌هوک برای اطلاع‌رسانی'
-        required: true
+        description: 'آدرس callback'
+        required: false
         type: string
 
 permissions:
@@ -39,12 +40,10 @@ jobs:
           VIDEO_URL="${{ github.event.inputs.video_url }}"
           JOB_ID="${{ github.event.inputs.job_id }}"
           
-          # ایجاد پوشه مخصوص این کار
           OUTPUT_DIR="downloads/${JOB_ID}"
           mkdir -p "${OUTPUT_DIR}"
           
           echo "📥 در حال دانلود..."
-          # دانلود با curl
           DL_NAME="original_video.mp4"
           if curl -L --fail --retry 5 --retry-delay 10 --connect-timeout 30 \
                --max-time 7200 \
@@ -53,7 +52,6 @@ jobs:
             FILE_SIZE=$(ls -lh "${DL_NAME}" | awk '{print $5}')
             echo "✅ دانلود شد: ${FILE_SIZE}"
             
-            # قطعه قطعه کردن (هر ۵ دقیقه)
             echo "✂️ در حال قطعه‌قطعه کردن..."
             ffmpeg -i "${DL_NAME}" \
                    -c copy \
@@ -63,11 +61,9 @@ jobs:
                    -reset_timestamps 1 \
                    "${OUTPUT_DIR}/segment_%03d.mp4"
             
-            # شمارش قطعات
             SEGMENT_COUNT=$(ls -1 "${OUTPUT_DIR}"/*.mp4 | wc -l)
             echo "📦 تعداد قطعات: ${SEGMENT_COUNT}"
             
-            # حذف فایل اصلی برای صرفه‌جویی در فضا
             rm "${DL_NAME}"
             
             echo "segment_count=${SEGMENT_COUNT}" >> $GITHUB_OUTPUT
@@ -89,7 +85,6 @@ jobs:
           if ! git diff --staged --quiet; then
             git commit -m "Add video ${{ github.event.inputs.job_id }} (${{ steps.split.outputs.segment_count }} segments)"
             
-            # تلاش مجدد در صورت شکست
             for attempt in $(seq 1 10); do
               echo "⏳ Push attempt ${attempt}/10..."
               git pull --rebase 2>/dev/null || true
@@ -102,7 +97,7 @@ jobs:
           fi
       
       - name: Notify server
-        if: success()
+        if: success() && github.event.inputs.callback_url != ''
         run: |
           CALLBACK_URL="${{ github.event.inputs.callback_url }}"
           
@@ -117,7 +112,7 @@ jobs:
                }"
       
       - name: Notify failure
-        if: failure()
+        if: failure() && github.event.inputs.callback_url != ''
         run: |
           CALLBACK_URL="${{ github.event.inputs.callback_url }}"
           
